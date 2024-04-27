@@ -1,4 +1,3 @@
-
 FROM golang:1.21 as builder
 WORKDIR /app
 COPY cmd cmd
@@ -10,7 +9,6 @@ RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-linkmode external -extldflags -
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
-COPY --from=builder /app/tribler_arr_shim .
 COPY scripts scripts
-COPY templates templates
+COPY --from=builder /app/tribler_arr_shim .
 CMD ["./tribler_arr_shim", "server"]
