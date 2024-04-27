@@ -2,65 +2,18 @@ package tribler
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
-	"log"
-	"net"
+	"errors"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
-// Create net/http client
-var client = &http.Client{
-	Transport: &http.Transport{
-		Dial: (&net.Dialer{
-			Timeout: 5 * time.Second,
-		}).Dial,
-		TLSHandshakeTimeout: 5 * time.Second,
-	},
-}
-
-// This package requests tribler api instance and returns the response.
-
-// Tribler torrent struct
-/*
-{
-  "downloads": {
-    "all_time_upload": 0,
-    "hops": 0,
-    "files": "string",
-    "destination": "string",
-    "total_pieces": 0,
-    "all_time_ratio": 0,
-    "status_code": 0,
-    "num_peers": 0,
-    "speed_down": 0,
-    "time_added": 0,
-    "size": 0,
-    "all_time_download": 0,
-    "availability": 0,
-    "safe_seeding": true,
-    "name": "string",
-    "max_download_speed": 0,
-    "status": "string",
-    "infohash": "string",
-    "max_upload_speed": 0,
-    "peers": "string",
-    "trackers": "string",
-    "anon_download": true,
-    "error": "string",
-    "num_seeds": 0,
-    "progress": 0,
-    "eta": 0,
-    "speed_up": 0
-  },
-  "checkpoints": {
-    "loaded": 0,
-    "all_loaded": true,
-    "total": 0
-  }
-}
-*/
 type Download struct {
 	AllTimeUpload    float64    `json:"all_time_upload"`
 	Hops             int        `json:"hops"`
@@ -116,241 +69,227 @@ type Files struct {
 	Progress float64 `json:"progress"`
 }
 
-// /downloads response
 type DownloadsResponse struct {
 	Downloads   []Download  `json:"downloads"`
 	Checkpoints Checkpoints `json:"checkpoints"`
 }
 
-// All methods are requested with TRIBLER_API_ENDPOINT environment variable.
-// All requests include X-Api-Key header that is set to TRIBLER_API_KEY environment variable.
-// GetDownloads retrieves torrents and returns them as a slice of Downloads structs
-// URI: /downloads
-// Method: GET
-// Request: None
-// Response: Downloads
-func GetDownloads() DownloadsResponse {
+const (
+	apiKeyHeader           = "X-Api-Key"
+	triblerAPIEndpointEnv  = "TRIBLER_API_ENDPOINT"
+	triblerAPIKeyEnv       = "TRIBLER_API_KEY"
+	triblerDownloadDirEnv  = "TRIBLER_DOWNLOAD_DIR"
+	tlsSkipVerifyEnv       = "TLS_SKIP_VERIFY"
+	defaultDownloadTimeout = 5 * time.Second
+)
 
-	req, err := http.NewRequest("GET", os.Getenv("TRIBLER_API_ENDPOINT")+"/downloads", nil)
+func newHTTPClient() (*http.Client, error) {
+	tlsConfig, err := getTLSConfig()
 	if err != nil {
-		log.Print(err)
-		return DownloadsResponse{}
-	}
-	// set X-Api-Key header
-	req.Header.Set("X-Api-Key", os.Getenv("TRIBLER_API_KEY"))
-
-	// send request
-	response, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-		return DownloadsResponse{}
-	}
-	// pretty print response in the log
-	log.Printf("%+v", response.Body)
-	var downloadsResponse DownloadsResponse
-	// pretty print response in the log
-	err = json.NewDecoder(response.Body).Decode(&downloadsResponse)
-	if err != nil {
-		log.Print(err)
-		return DownloadsResponse{}
+		return nil, err
 	}
 
-	return downloadsResponse
+	return &http.Client{
+		Timeout:   defaultDownloadTimeout,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+	}, nil
 }
 
-// GetDownload retrieves a torrent
-// URI: /downloads
-// Method: GET
-// Params: hash=string
-// Request: None
-// Response: Downloads
-func GetDownload(hash string) Download {
-
-	req, err := http.NewRequest("GET", os.Getenv("TRIBLER_API_ENDPOINT")+"/downloads?hash="+hash, nil)
-	if err != nil {
-		log.Print(err)
-		return Download{}
-	}
-	// set X-Api-Key header
-	req.Header.Set("X-Api-Key", os.Getenv("TRIBLER_API_KEY"))
-
-	// send request
-	response, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-		return Download{}
-	}
-	// pretty print response in the log
-	var downloadResponse DownloadsResponse
-	err = json.NewDecoder(response.Body).Decode(&downloadResponse)
-	if err != nil {
-		log.Print(err)
-		return Download{}
-	}
-	if len(downloadResponse.Downloads) == 0 {
-		return Download{}
+func getTLSConfig() (*tls.Config, error) {
+	skipVerify := false
+	if v := os.Getenv(tlsSkipVerifyEnv); v != "" {
+		skipVerify, _ = strconv.ParseBool(v)
 	}
 
-	return downloadResponse.Downloads[0]
+	if skipVerify {
+		return &tls.Config{InsecureSkipVerify: true}, nil
+	}
+
+	return nil, nil
 }
 
-// AddDownload adds a new torrent to tribler
-// URI: /downloads
-// Method: PUT
-//
-//	Body: {
-//	  "anon_hops": 2,
-//	  "safe_seeding": true,
-//	  "uri": "
-//	  "destination": "/downloads/prowlarr"
-//	}
-func AddDownload(uri string) {
+func newDownloadRequest(method, path string, body interface{}) (*http.Request, error) {
+	apiEndpoint := os.Getenv(triblerAPIEndpointEnv)
+	if apiEndpoint == "" {
+		return nil, errors.New("TRIBLER_API_ENDPOINT environment variable is not set")
+	}
 
-	// create request body
+	apiKey := os.Getenv(triblerAPIKeyEnv)
+	if apiKey == "" {
+		return nil, errors.New("TRIBLER_API_KEY environment variable is not set")
+	}
+
+	u, err := url.Parse(apiEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	u.Path = path
+
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			return nil, err
+		}
+	}
+
+	req, err := http.NewRequest(method, u.String(), &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(apiKeyHeader, apiKey)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	return req, nil
+}
+
+func executeDownloadRequest(client *http.Client, req *http.Request) ([]byte, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, errors.New(strings.TrimSpace(resp.Status))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+func GetDownloads() (DownloadsResponse, error) {
+	client, err := newHTTPClient()
+	if err != nil {
+		return DownloadsResponse{}, err
+	}
+
+	req, err := newDownloadRequest("GET", "/downloads", nil)
+	if err != nil {
+		return DownloadsResponse{}, err
+	}
+
+	body, err := executeDownloadRequest(client, req)
+	if err != nil {
+		return DownloadsResponse{}, err
+	}
+
+	var dr DownloadsResponse
+	if err := json.Unmarshal(body, &dr); err != nil {
+		return DownloadsResponse{}, err
+	}
+
+	return dr, nil
+}
+
+func GetDownload(hash string) (Download, error) {
+	client, err := newHTTPClient()
+	if err != nil {
+		return Download{}, err
+	}
+
+	req, err := newDownloadRequest("GET", "/downloads", map[string]string{"hash": hash})
+	if err != nil {
+		return Download{}, err
+	}
+
+	body, err := executeDownloadRequest(client, req)
+	if err != nil {
+		return Download{}, err
+	}
+
+	var dr DownloadsResponse
+	if err := json.Unmarshal(body, &dr); err != nil {
+		return Download{}, err
+	}
+
+	if len(dr.Downloads) == 0 {
+		return Download{}, errors.New("download not found")
+	}
+
+	return dr.Downloads[0], nil
+}
+
+func AddDownload(uri string) error {
+	client, err := newHTTPClient()
+	if err != nil {
+		return err
+	}
+
 	body := map[string]interface{}{
 		"anon_hops":    2,
 		"safe_seeding": true,
 		"uri":          uri,
-		"destination":  os.Getenv("TRIBLER_DOWNLOAD_DIR"),
-	}
-	// convert body to json
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		log.Print(err)
-		return
+		"destination":  os.Getenv(triblerDownloadDirEnv),
 	}
 
-	req, err := http.NewRequest("PUT", os.Getenv("TRIBLER_API_ENDPOINT")+"/downloads", bytes.NewBuffer(jsonBody))
+	req, err := newDownloadRequest("PUT", "/downloads", body)
 	if err != nil {
-		log.Print(err)
-		return
+		return err
 	}
-	// set X-Api-Key header
-	req.Header.Set("X-Api-Key", os.Getenv("TRIBLER_API_KEY"))
-	req.Header.Set("Content-Type", "application/json")
 
-	// send request
-	response, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	// pretty print response in the log
-	log.Printf("%+v", response.Body)
+	_, err = executeDownloadRequest(client, req)
+	return err
 }
 
-// GetDownloadsFiles retrieves files of a torrent
-// URI: /downloads/:hash:/files
-// Method: GET
-// Request: None
-// Response: TorrentFiles
-func GetDownloadsFiles(hash string) TorrentFiles {
-
-	req, err := http.NewRequest("GET", os.Getenv("TRIBLER_API_ENDPOINT")+"/downloads/"+hash+"/files", nil)
+func GetDownloadsFiles(hash string) (TorrentFiles, error) {
+	client, err := newHTTPClient()
 	if err != nil {
-		log.Print(err)
-		return TorrentFiles{}
-	}
-	// set X-Api-Key header
-	req.Header.Set("X-Api-Key", os.Getenv("TRIBLER_API_KEY"))
-
-	// send request
-	response, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-		return TorrentFiles{}
-	}
-	// pretty print response in the log
-	log.Printf("%+v", response.Body)
-	var torrentFiles TorrentFiles
-	// pretty print response in the log
-	err = json.NewDecoder(response.Body).Decode(&torrentFiles)
-	if err != nil {
-		log.Print(err)
-		return TorrentFiles{}
+		return TorrentFiles{}, err
 	}
 
-	return torrentFiles
+	req, err := newDownloadRequest("GET", "/downloads/"+hash+"/files", nil)
+	if err != nil {
+		return TorrentFiles{}, err
+	}
 
+	body, err := executeDownloadRequest(client, req)
+	if err != nil {
+		return TorrentFiles{}, err
+	}
+
+	var tf TorrentFiles
+	if err := json.Unmarshal(body, &tf); err != nil {
+		return TorrentFiles{}, err
+	}
+
+	return tf, nil
 }
 
-// DeleteDownload deletes a torrent
-// URI: /downloads/:hash:
-// Method: DELETE
-// Request:
-//
-//	{
-//		"remove_data": bool
-//	}
-//
-// Response: None
-func DeleteDownload(hash string, remove_data bool) {
+func DeleteDownload(hash string, removeData bool) error {
+	client, err := newHTTPClient()
+	if err != nil {
+		return err
+	}
 
-	// create request body
 	body := map[string]interface{}{
-		"remove_data": remove_data,
-	}
-	// convert body to json
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		log.Print(err)
-		return
+		"remove_data": removeData,
 	}
 
-	req, err := http.NewRequest("DELETE", os.Getenv("TRIBLER_API_ENDPOINT")+"/downloads/"+hash, bytes.NewBuffer(jsonBody))
+	req, err := newDownloadRequest("DELETE", "/downloads/"+hash, body)
 	if err != nil {
-		log.Print(err)
-		return
+		return err
 	}
-	// set X-Api-Key header
-	req.Header.Set("X-Api-Key", os.Getenv("TRIBLER_API_KEY"))
-	req.Header.Set("Content-Type", "application/json")
 
-	// send request
-	response, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	// pretty print response in the log
-	log.Printf("%+v", response.Body)
+	_, err = executeDownloadRequest(client, req)
+	return err
 }
 
-// Update a download
-// URI: /downloads/:hash:
-// Method: PATCH
-//
-//	Body: {
-//		state string [resume/stop/recheck]
-//	}
-func UpdateDownload(hash string, state string) {
+func UpdateDownload(hash string, state string) error {
+	client, err := newHTTPClient()
+	if err != nil {
+		return err
+	}
 
-	// create request body
 	body := map[string]interface{}{
 		"state": state,
 	}
-	// convert body to json
-	jsonBody, err := json.Marshal(body)
+
+	req, err := newDownloadRequest("PATCH", "/downloads/"+hash, body)
 	if err != nil {
-		log.Print(err)
-		return
+		return err
 	}
 
-	req, err := http.NewRequest("PATCH", os.Getenv("TRIBLER_API_ENDPOINT")+"/downloads/"+hash, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	// set X-Api-Key header
-	req.Header.Set("X-Api-Key", os.Getenv("TRIBLER_API_KEY"))
-	req.Header.Set("Content-Type", "application/json")
-
-	// send request
-	response, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	// pretty print response in the log
-	log.Printf("%+v", response.Body)
+	_, err = executeDownloadRequest(client, req)
+	return err
 }

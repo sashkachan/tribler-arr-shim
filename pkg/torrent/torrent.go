@@ -150,7 +150,7 @@ func GetInfo(db *sql.DB) gin.HandlerFunc {
 		// Get category from query
 		// category := c.Query("category")
 		// get Downloads from tribler
-		downloads := tribler.GetDownloads()
+		downloads, _ := tribler.GetDownloads()
 		// convert downloads to the following struct
 		torrents := ConvertTriblerDownloadstoTorrent(downloads.Downloads)
 
@@ -172,7 +172,7 @@ func GetProperties(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hash
 		hash := c.Query("hash")
-		download := tribler.GetDownload(hash)
+		download, _ := tribler.GetDownload(hash)
 		// convert download to the following struct
 		properties := ConvertTriblerDownloadtoTorrentProperties(download)
 		c.JSON(http.StatusOK, properties)
@@ -184,7 +184,7 @@ func GetProperties(db *sql.DB) gin.HandlerFunc {
 func GetTorrentsContents(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		hash := c.Query("hash")
-		torrentFiles := tribler.GetDownloadsFiles(hash)
+		torrentFiles, _ := tribler.GetDownloadsFiles(hash)
 		// convert downloads to the following struct
 		files := ConvertTriblerFilesToTorrentFiles(torrentFiles.Files)
 		// if files is empty, return empty json
