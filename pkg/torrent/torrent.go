@@ -88,24 +88,26 @@ type TorrentProperties struct {
 }
 
 type AppPreferences struct {
-	SavePath              string  `json:"save_path"`
-	MaxRatioEnabled       bool    `json:"max_ratio_enabled"`
-	MaxRatio              float64 `json:"max_ratio"`
-	MaxSeedingTimeEnabled bool    `json:"max_seeding_time_enabled"`
-	MaxSeedingTime        int     `json:"max_seeding_time"`
-	MaxRatioAction        string  `json:"max_ratio_act"`
-	QueueingEnabled       bool    `json:"queueing_enabled"`
-	DhtEnabled            bool    `json:"dht"`
+	SavePath               string  `json:"save_path"`
+	MaxRatioEnabled        bool    `json:"max_ratio_enabled"`
+	MaxRatio               float64 `json:"max_ratio"`
+	MaxSeedingTimeEnabled  bool    `json:"max_seeding_time_enabled"`
+	MaxSeedingTime         int     `json:"max_seeding_time"`
+	MaxRatioAction         string  `json:"max_ratio_act"`
+	QueueingEnabled        bool    `json:"queueing_enabled"`
+	DhtEnabled             bool    `json:"dht"`
+	CreateSubfolderEnabled bool    `json:"create_subfolder_enabled"`
 }
 
 var DummyAppPreferences = AppPreferences{
-	MaxRatioEnabled:       false,
-	MaxRatio:              0,
-	MaxSeedingTimeEnabled: false,
-	MaxSeedingTime:        0,
-	MaxRatioAction:        "pause",
-	QueueingEnabled:       true,
-	DhtEnabled:            true,
+	MaxRatioEnabled:        false,
+	MaxRatio:               0,
+	MaxSeedingTimeEnabled:  false,
+	MaxSeedingTime:         0,
+	MaxRatioAction:         "pause",
+	QueueingEnabled:        true,
+	DhtEnabled:             true,
+	CreateSubfolderEnabled: false,
 }
 
 func LoginHandler(db *sql.DB) gin.HandlerFunc {
