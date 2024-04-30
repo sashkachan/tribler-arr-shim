@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"strconv"
@@ -131,8 +133,8 @@ func newDownloadRequest(method, path string, body interface{}) (*http.Request, e
 			return nil, err
 		}
 	}
-
 	req, err := http.NewRequest(method, u.String(), &buf)
+
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +152,12 @@ func executeDownloadRequest(client *http.Client, req *http.Request) ([]byte, err
 		return nil, err
 	}
 	defer resp.Body.Close()
+	// pretty print http request
+	dump, err := httputil.DumpRequest(req, true)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(string(dump))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errors.New(strings.TrimSpace(resp.Status))
@@ -210,10 +218,10 @@ func GetDownload(hash string) (Download, error) {
 	return dr.Downloads[0], nil
 }
 
-func AddDownload(uri string) error {
+func AddDownload(uri string) ([]byte, error) {
 	client, err := newHTTPClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	body := map[string]interface{}{
@@ -222,14 +230,14 @@ func AddDownload(uri string) error {
 		"uri":          uri,
 		"destination":  os.Getenv(triblerDownloadDirEnv),
 	}
-
+	log.Println("AddDownload.body", body)
 	req, err := newDownloadRequest("PUT", "/downloads", body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = executeDownloadRequest(client, req)
-	return err
+	response, err := executeDownloadRequest(client, req)
+	return response, err
 }
 
 func GetDownloadsFiles(hash string) (TorrentFiles, error) {

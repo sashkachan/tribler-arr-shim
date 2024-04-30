@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"encoding/gob"
 	"fmt"
 	"log"
@@ -14,8 +13,6 @@ import (
 	cookiestore "github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func StartServer() {
@@ -24,23 +21,7 @@ func StartServer() {
 		log.Printf("Error loading .env file: %v\n", err)
 	}
 
-	db, err := sql.Open("sqlite3", os.Getenv("SQLITE_PATH"))
-	if err != nil {
-		log.Fatal("Error opening database:", err)
-	}
-	defer db.Close()
-
-	initDBSQL, err := os.ReadFile("scripts/init_db.sql")
-	if err != nil {
-		log.Fatal("Error reading init_db.sql:", err)
-	}
-
-	_, err = db.Exec(string(initDBSQL))
-	if err != nil {
-		log.Fatal("Error executing init_db.sql:", err)
-	}
-
-	r := apiv2Routes(db)
+	r := apiv2Routes()
 
 	// scheme := os.Getenv("TRIBLER_ARR_SHIM_SCHEME")
 	addr := os.Getenv("TRIBLER_ARR_SHIM_ADDR")
@@ -60,31 +41,31 @@ func loggingMiddleware(c *gin.Context) {
 	c.Next()
 }
 
-func apiv2Routes(db *sql.DB) *gin.Engine {
+func apiv2Routes() *gin.Engine {
 	r := gin.Default()
 
 	gob.Register(map[string]interface{}{})
 	r.Use(sessions.Sessions("tribler-arr-shim", cookiestore.NewStore([]byte(os.Getenv("SESSION_SECRET")))))
 	r.Use(loggingMiddleware)
-	r.POST("/api/v2/auth/login", torrent.LoginHandler(db))
-	// r.GET("/api/auth/callback", authentication.CallbackHandler(authenticator, db))
-	// r.GET("/api/user", isAuthenticatedFn(db), user.GetUserInfoHandler(db))
+	r.POST("/api/v2/auth/login", torrent.LoginHandler())
+	// r.GET("/api/auth/callback", authentication.CallbackHandler(authenticator, ()))
+	// r.GET("/api/user", isAuthenticatedFn(), user.GetUserInfoHandler())
 	// user subscription
-	r.GET("/api/v2/app/webapiVersion", torrent.GetWebApiVersion(db))
-	r.GET("/api/v2/app/version", torrent.GetVersion(db))
-	r.GET("/api/v2/app/preferences", torrent.GetAppPreferences(db))
-	r.GET("/api/v2/torrents/info", torrent.GetInfo(db))
-	r.GET("/api/v2/torrents/properties", torrent.GetProperties(db))
-	r.GET("/api/v2/torrents/files", torrent.GetTorrentsContents(db))
-	r.POST("/api/v2/torrents/add", torrent.Add(db))
-	r.POST("/api/v2/torrents/delete", torrent.Delete(db))
-	r.POST("/api/v2/torrents/setCategory", torrent.SetCategory(db))
-	r.GET("/api/v2/torrents/categories", torrent.GetCategories(db))
-	r.POST("/api/v2/torrents/setShareLimits", torrent.SetShareLimits(db))
-	r.POST("/api/v2/torrents/topPrio", torrent.SetTopPriority(db))
-	r.POST("/api/v2/torrents/pause", torrent.PauseTorrent(db))
-	r.POST("/api/v2/torrents/resume", torrent.ResumeTorrent(db))
-	r.POST("/api/v2/torrents/setForceStart", torrent.SetForceStartTorrent(db))
+	r.GET("/api/v2/app/webapiVersion", torrent.GetWebApiVersion())
+	r.GET("/api/v2/app/version", torrent.GetVersion())
+	r.GET("/api/v2/app/preferences", torrent.GetAppPreferences())
+	r.GET("/api/v2/torrents/info", torrent.GetInfo())
+	r.GET("/api/v2/torrents/properties", torrent.GetProperties())
+	r.GET("/api/v2/torrents/files", torrent.GetTorrentsContents())
+	r.POST("/api/v2/torrents/add", torrent.Add())
+	r.POST("/api/v2/torrents/delete", torrent.Delete())
+	r.POST("/api/v2/torrents/setCategory", torrent.SetCategory())
+	r.GET("/api/v2/torrents/categories", torrent.GetCategories())
+	r.POST("/api/v2/torrents/setShareLimits", torrent.SetShareLimits())
+	r.POST("/api/v2/torrents/topPrio", torrent.SetTopPriority())
+	r.POST("/api/v2/torrents/pause", torrent.PauseTorrent())
+	r.POST("/api/v2/torrents/resume", torrent.ResumeTorrent())
+	r.POST("/api/v2/torrents/setForceStart", torrent.SetForceStartTorrent())
 
 	return r
 }

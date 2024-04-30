@@ -1,7 +1,7 @@
 package language
 
 import (
-	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -89,17 +89,18 @@ type TorrentProperties struct {
 
 type AppPreferences struct {
 	SavePath               string  `json:"save_path"`
-	MaxRatioEnabled        bool    `json:"max_ratio_enabled"`
-	MaxRatio               float64 `json:"max_ratio"`
-	MaxSeedingTimeEnabled  bool    `json:"max_seeding_time_enabled"`
-	MaxSeedingTime         int     `json:"max_seeding_time"`
 	MaxRatioAction         string  `json:"max_ratio_act"`
+	MaxRatio               float64 `json:"max_ratio"`
+	MaxSeedingTime         int     `json:"max_seeding_time"`
+	MaxRatioEnabled        bool    `json:"max_ratio_enabled"`
+	MaxSeedingTimeEnabled  bool    `json:"max_seeding_time_enabled"`
 	QueueingEnabled        bool    `json:"queueing_enabled"`
 	DhtEnabled             bool    `json:"dht"`
 	CreateSubfolderEnabled bool    `json:"create_subfolder_enabled"`
 }
 
 var DummyAppPreferences = AppPreferences{
+	SavePath:               os.Getenv("TRIBLER_DOWNLOAD_DIR"),
 	MaxRatioEnabled:        false,
 	MaxRatio:               0,
 	MaxSeedingTimeEnabled:  false,
@@ -110,13 +111,13 @@ var DummyAppPreferences = AppPreferences{
 	CreateSubfolderEnabled: false,
 }
 
-func LoginHandler(db *sql.DB) gin.HandlerFunc {
+func LoginHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Generate a random string of 32 characters
 		sid := "01234678910111213141617"
 
 		// Store the session ID in the database
-		err := storeSessionID(db, sid)
+		err := storeSessionID(sid)
 		if err != nil {
 			return
 		}
@@ -131,23 +132,21 @@ func LoginHandler(db *sql.DB) gin.HandlerFunc {
 }
 
 // GetApiVersion retrieves api version
-func GetWebApiVersion(db *sql.DB) gin.HandlerFunc {
+func GetWebApiVersion() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: implement getting torrent info from DB
 		c.String(http.StatusOK, "2.2.8")
 	}
 }
 
 // GetVersion retrieves api version
-func GetVersion(db *sql.DB) gin.HandlerFunc {
+func GetVersion() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: implement getting torrent info from DB
 		c.String(http.StatusOK, "4.1.3")
 	}
 }
 
 // GetInfo retrieves information about a torrent
-func GetInfo(db *sql.DB) gin.HandlerFunc {
+func GetInfo() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get category from query
 		// category := c.Query("category")
@@ -162,7 +161,7 @@ func GetInfo(db *sql.DB) gin.HandlerFunc {
 }
 
 // GetAppPreferences retrieves app preferences
-func GetAppPreferences(db *sql.DB) gin.HandlerFunc {
+func GetAppPreferences() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		DummyAppPreferences.SavePath = os.Getenv("TRIBLER_DOWNLOAD_DIR")
 		c.JSON(http.StatusOK, DummyAppPreferences)
@@ -170,7 +169,7 @@ func GetAppPreferences(db *sql.DB) gin.HandlerFunc {
 }
 
 // GetProperties retrieves properties of a torrent
-func GetProperties(db *sql.DB) gin.HandlerFunc {
+func GetProperties() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hash
 		hash := c.Query("hash")
@@ -178,12 +177,11 @@ func GetProperties(db *sql.DB) gin.HandlerFunc {
 		// convert download to the following struct
 		properties := ConvertTriblerDownloadtoTorrentProperties(download)
 		c.JSON(http.StatusOK, properties)
-
 	}
 }
 
 // GetTorrentsContents retrieves contents of a torrent
-func GetTorrentsContents(db *sql.DB) gin.HandlerFunc {
+func GetTorrentsContents() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		hash := c.Query("hash")
 		torrentFiles, _ := tribler.GetDownloadsFiles(hash)
@@ -200,20 +198,27 @@ func GetTorrentsContents(db *sql.DB) gin.HandlerFunc {
 }
 
 // Add adds a new torrent
-func Add(db *sql.DB) gin.HandlerFunc {
+func Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get urls parameter, it's separated by new lines
 		urls := c.PostForm("urls")
+		log.Println("torrent.Add urls: ", urls)
 		// split urls by new line
 		urls_lines := strings.Split(urls, "\n")
 		// only use the first url
-		tribler.AddDownload(urls_lines[0])
+		response, err := tribler.AddDownload(urls_lines[0])
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error adding torrent"})
+			log.Printf("Error: %+v", err)
+			return
+		}
+		log.Printf("Response: %+v", response)
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent added"})
 	}
 }
 
 // Delete deletes a torrent
-func Delete(db *sql.DB) gin.HandlerFunc {
+func Delete() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hashes
 		hashes := c.PostForm("hashes")
@@ -229,7 +234,7 @@ func Delete(db *sql.DB) gin.HandlerFunc {
 }
 
 // SetCategory sets the category of a torrent
-func SetCategory(db *sql.DB) gin.HandlerFunc {
+func SetCategory() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting the category of a torrent in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent category set"})
@@ -237,20 +242,20 @@ func SetCategory(db *sql.DB) gin.HandlerFunc {
 }
 
 // GetCategories retrieves all torrent categories
-func GetCategories(db *sql.DB) gin.HandlerFunc {
+func GetCategories() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement getting all torrent categories from DB
 		c.JSON(http.StatusOK, gin.H{
 			os.Getenv("DEFAULT_CATEGORY"): gin.H{
 				"name":     os.Getenv("DEFAULT_CATEGORY"),
-				"savePath": "/downloads",
+				"savePath": os.Getenv("TRIBLER_DOWNLOAD_DIR"),
 			},
 		})
 	}
 }
 
 // SetShareLimits sets the share limits of a torrent
-func SetShareLimits(db *sql.DB) gin.HandlerFunc {
+func SetShareLimits() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting the share limits of a torrent in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent share limits set"})
@@ -258,7 +263,7 @@ func SetShareLimits(db *sql.DB) gin.HandlerFunc {
 }
 
 // SetTopPriority sets the priority of a torrent to top
-func SetTopPriority(db *sql.DB) gin.HandlerFunc {
+func SetTopPriority() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting the priority of a torrent to top in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent priority set to top"})
@@ -266,7 +271,7 @@ func SetTopPriority(db *sql.DB) gin.HandlerFunc {
 }
 
 // PauseTorrent pauses a torrent
-func PauseTorrent(db *sql.DB) gin.HandlerFunc {
+func PauseTorrent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hashes
 		hashes := c.PostForm("hashes")
@@ -276,7 +281,7 @@ func PauseTorrent(db *sql.DB) gin.HandlerFunc {
 }
 
 // ResumeTorrent resumes a torrent
-func ResumeTorrent(db *sql.DB) gin.HandlerFunc {
+func ResumeTorrent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hashes
 		hashes := c.PostForm("hashes")
@@ -286,14 +291,14 @@ func ResumeTorrent(db *sql.DB) gin.HandlerFunc {
 }
 
 // SetForceStartTorrent sets a torrent to force start
-func SetForceStartTorrent(db *sql.DB) gin.HandlerFunc {
+func SetForceStartTorrent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting a torrent to force start in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent set to force start"})
 	}
 }
 
-func storeSessionID(db *sql.DB, sid string) error {
+func storeSessionID(sid string) error {
 	// TODO: implement storing the session ID in the database
 	return nil
 }
@@ -340,7 +345,7 @@ func ConvertTriblerDownloadstoTorrent(downloads []tribler.Download) []Torrent {
 
 func ConvertTriblerDownloadtoTorrentProperties(download tribler.Download) TorrentProperties {
 	return TorrentProperties{
-		SavePath:               download.Destination + "/" + download.Name,
+		SavePath:               download.Destination,
 		CreationDate:           0,
 		PieceSize:              0,
 		Comment:                "",
@@ -374,15 +379,12 @@ func ConvertTriblerDownloadtoTorrentProperties(download tribler.Download) Torren
 		UpSpeedAvg:             0,
 		UpSpeed:                0,
 	}
-
 }
 
 func ConvertTriblerFilesToTorrentFiles(files []tribler.Files) []TorrentFiles {
-
 	torrentFiles := []TorrentFiles{}
 	for _, file := range files {
 		torrentFiles = append(torrentFiles, TorrentFiles{
-
 			Index:        file.Index,
 			Name:         "./" + file.Name,
 			Size:         file.Size,
