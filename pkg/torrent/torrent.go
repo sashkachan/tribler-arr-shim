@@ -349,7 +349,7 @@ func ConvertTriblerDownloadstoTorrent(downloads []tribler.Download) []Torrent {
 }
 
 func containsFileExtensionSuffix(s string) bool {
-	re := regexp.MustCompile(`\.{3}$`)
+	re := regexp.MustCompile(`\.[a-z0-9]{3}$`)
 	return re.MatchString(s)
 }
 
@@ -357,6 +357,7 @@ func ConvertTriblerDownloadtoTorrentProperties(download tribler.Download) Torren
 	// manipulate destination so that single file downloads destination is handled
 	destination := download.Destination
 	if !containsFileExtensionSuffix(download.Name) {
+		log.Println("Does not contain extension = ", download.Name)
 		destination = download.Destination + "/" + download.Name
 	}
 	return TorrentProperties{
