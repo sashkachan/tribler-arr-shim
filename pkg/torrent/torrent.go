@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"tribler-arr-shim/pkg/tribler"
@@ -173,7 +174,11 @@ func GetProperties() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hash
 		hash := c.Query("hash")
-		download, _ := tribler.GetDownload(hash)
+		download, err := tribler.GetDownload(hash)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"err": err})
+			return
+		}
 		// convert download to the following struct
 		properties := ConvertTriblerDownloadtoTorrentProperties(download)
 		c.JSON(http.StatusOK, properties)
@@ -343,9 +348,19 @@ func ConvertTriblerDownloadstoTorrent(downloads []tribler.Download) []Torrent {
 	return torrent
 }
 
+func containsFileExtensionSuffix(s string) bool {
+	re := regexp.MustCompile(`\.{3}$`)
+	return re.MatchString(s)
+}
+
 func ConvertTriblerDownloadtoTorrentProperties(download tribler.Download) TorrentProperties {
+	// manipulate destination so that single file downloads destination is handled
+	destination := download.Destination
+	if !containsFileExtensionSuffix(download.Name) {
+		destination = download.Destination + "/" + download.Name
+	}
 	return TorrentProperties{
-		SavePath:               download.Destination,
+		SavePath:               destination,
 		CreationDate:           0,
 		PieceSize:              0,
 		Comment:                "",

@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"strconv"
@@ -110,7 +109,7 @@ func getTLSConfig() (*tls.Config, error) {
 	return nil, nil
 }
 
-func newDownloadRequest(method, path string, body interface{}) (*http.Request, error) {
+func newDownloadRequest(method, path string, hash string, body map[string]interface{}) (*http.Request, error) {
 	apiEndpoint := os.Getenv(triblerAPIEndpointEnv)
 	if apiEndpoint == "" {
 		return nil, errors.New("TRIBLER_API_ENDPOINT environment variable is not set")
@@ -125,10 +124,21 @@ func newDownloadRequest(method, path string, body interface{}) (*http.Request, e
 	if err != nil {
 		return nil, err
 	}
+
 	u.Path = path
 
 	var buf bytes.Buffer
-	if body != nil {
+	var query url.Values
+	if method == "GET" && hash != "" {
+		query = u.Query()
+		query.Set("infohash", hash)
+		u.RawQuery = query.Encode()
+	}
+
+	log.Println("Path=", u.Path)
+	log.Println("Query=", u.RawQuery)
+
+	if method == "PUT" || method == "PATCH" || method == "DELETE" {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
 			return nil, err
 		}
@@ -139,7 +149,7 @@ func newDownloadRequest(method, path string, body interface{}) (*http.Request, e
 		return nil, err
 	}
 	req.Header.Set(apiKeyHeader, apiKey)
-	if body != nil {
+	if method == "PUT" || method == "DELETE" || method == "PATCH" {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
@@ -152,12 +162,6 @@ func executeDownloadRequest(client *http.Client, req *http.Request) ([]byte, err
 		return nil, err
 	}
 	defer resp.Body.Close()
-	// pretty print http request
-	dump, err := httputil.DumpRequest(req, true)
-	if err != nil {
-		log.Println(err)
-	}
-	log.Println(string(dump))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errors.New(strings.TrimSpace(resp.Status))
@@ -172,7 +176,7 @@ func GetDownloads() (DownloadsResponse, error) {
 		return DownloadsResponse{}, err
 	}
 
-	req, err := newDownloadRequest("GET", "/downloads", nil)
+	req, err := newDownloadRequest("GET", "/downloads", "", nil)
 	if err != nil {
 		return DownloadsResponse{}, err
 	}
@@ -196,24 +200,31 @@ func GetDownload(hash string) (Download, error) {
 		return Download{}, err
 	}
 
-	req, err := newDownloadRequest("GET", "/downloads", map[string]string{"hash": hash})
+	req, err := newDownloadRequest("GET", "/downloads", hash, nil)
 	if err != nil {
+		log.Println("Error can't make request")
 		return Download{}, err
 	}
 
+	log.Printf("GetDownload Request=", req.URL)
 	body, err := executeDownloadRequest(client, req)
 	if err != nil {
+		log.Println("Error can't execute download request", err)
 		return Download{}, err
 	}
 
 	var dr DownloadsResponse
 	if err := json.Unmarshal(body, &dr); err != nil {
+		log.Println("Error can't unmarshall response")
 		return Download{}, err
 	}
 
 	if len(dr.Downloads) == 0 {
+		log.Println("Error downloads list empty")
 		return Download{}, errors.New("download not found")
 	}
+
+	log.Printf("Download returns %+v", dr.Downloads[0])
 
 	return dr.Downloads[0], nil
 }
@@ -231,7 +242,7 @@ func AddDownload(uri string) ([]byte, error) {
 		"destination":  os.Getenv(triblerDownloadDirEnv),
 	}
 	log.Println("AddDownload.body", body)
-	req, err := newDownloadRequest("PUT", "/downloads", body)
+	req, err := newDownloadRequest("PUT", "/downloads", "", body)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +257,7 @@ func GetDownloadsFiles(hash string) (TorrentFiles, error) {
 		return TorrentFiles{}, err
 	}
 
-	req, err := newDownloadRequest("GET", "/downloads/"+hash+"/files", nil)
+	req, err := newDownloadRequest("GET", "/downloads/"+hash+"/files", "", nil)
 	if err != nil {
 		return TorrentFiles{}, err
 	}
@@ -274,7 +285,7 @@ func DeleteDownload(hash string, removeData bool) error {
 		"remove_data": removeData,
 	}
 
-	req, err := newDownloadRequest("DELETE", "/downloads/"+hash, body)
+	req, err := newDownloadRequest("DELETE", "/downloads/"+hash, "", body)
 	if err != nil {
 		return err
 	}
@@ -293,7 +304,7 @@ func UpdateDownload(hash string, state string) error {
 		"state": state,
 	}
 
-	req, err := newDownloadRequest("PATCH", "/downloads/"+hash, body)
+	req, err := newDownloadRequest("PATCH", "/downloads/"+hash, "", body)
 	if err != nil {
 		return err
 	}
