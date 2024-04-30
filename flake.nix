@@ -21,7 +21,7 @@
               echo Welcome to tribler-arr-shim devshell!
               echo To build and run the project:
               export LD_LIBRARY_PATH=$NIX_LD_LIBRARY_PATH
-              echo "rm language.db || true && go run cmd/main.go"
+              echo "go run cmd/main.go server"
             '';
             };
         }
