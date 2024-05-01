@@ -15,7 +15,7 @@
               stdenv.cc.cc
             ];
             NIX_LD=builtins.readFile "${stdenv.cc}/nix-support/dynamic-linker";
-            buildInputs = [gopls delve go yarn nodejs lazygit vscode];
+            buildInputs = [gopls delve go yarn nodejs lazygit vscode aichat];
             hardeningDisable = [ "all" ];
             shellHook = ''
               echo Welcome to tribler-arr-shim devshell!

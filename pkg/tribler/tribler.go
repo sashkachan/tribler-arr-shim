@@ -233,9 +233,17 @@ func AddDownload(uri string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	hops := os.Getenv("TRIBLER_ANON_HOPS")
+	if hops == "" {
+		hops = "2" // Set default value if not set
+	}
+	hopsInt, err := strconv.Atoi(hops)
+	if err != nil {
+		log.Fatal("Error converting TRIBLER_ANON_HOPS to int:", err)
+	}
 
 	body := map[string]interface{}{
-		"anon_hops":    os.Getenv("TRIBLER_ANON_HOPS"),
+		"anon_hops":    hopsInt,
 		"safe_seeding": true,
 		"uri":          uri,
 		"destination":  os.Getenv(triblerDownloadDirEnv),
