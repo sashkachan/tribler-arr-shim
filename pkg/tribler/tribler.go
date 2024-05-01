@@ -144,7 +144,6 @@ func newDownloadRequest(method, path string, hash string, body map[string]interf
 		}
 	}
 	req, err := http.NewRequest(method, u.String(), &buf)
-
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +235,7 @@ func AddDownload(uri string) ([]byte, error) {
 	}
 
 	body := map[string]interface{}{
-		"anon_hops":    2,
+		"anon_hops":    os.Getenv("TRIBLER_ANON_HOPS"),
 		"safe_seeding": true,
 		"uri":          uri,
 		"destination":  os.Getenv(triblerDownloadDirEnv),

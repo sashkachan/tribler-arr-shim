@@ -402,7 +402,7 @@ func ConvertTriblerFilesToTorrentFiles(files []tribler.Files) []TorrentFiles {
 	for _, file := range files {
 		torrentFiles = append(torrentFiles, TorrentFiles{
 			Index:        file.Index,
-			Name:         "./" + file.Name,
+			Name:         file.Name,
 			Size:         file.Size,
 			Progress:     file.Progress,
 			Priority:     0,
