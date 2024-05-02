@@ -36,7 +36,7 @@ cp .env.example .env
 
 1. Modify .env variables as needed
 Fill in Tribler API details and preferred downloads dir.
-DEFAULT_CATEGORY can be arbitrary, it only used to return the save path for arr apps.
+DEFAULT_CATEGORY can be arbitrary, it only used to return the save path for *arr apps.
 
 
 1. Run Docker image
@@ -45,10 +45,13 @@ docker --env-from .env run github.com/sashkachan/tribler-arr-shim:main
 ```
 
 # Caveats
-1. Multiple categories are not supported. This means multiple arr apps will share the same category internally and will see all downloads from other apps.
+## Categories
+*arr apps distinguish their downloads from others by fetching the list with a category selector that will be applied to all API calls.
+Tribler does not implement a concept of categories but it can add tags to downloads.
+This means that regardless of the configured category in an *arr app, all downloads will be returned on list requests. 
 
 # TODO
-1. Allow multiple categories
+1. Support multiple categories. 
 
 
 ## License
