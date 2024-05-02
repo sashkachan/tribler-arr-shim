@@ -217,7 +217,7 @@ func Add() gin.HandlerFunc {
 			log.Printf("Error: %+v", err)
 			return
 		}
-		log.Printf("Response: %+v", response)
+		log.Printf("Response: %s", string(response))
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent added"})
 	}
 }
