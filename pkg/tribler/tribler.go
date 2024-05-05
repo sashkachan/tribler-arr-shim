@@ -205,7 +205,7 @@ func GetDownload(hash string) (Download, error) {
 		return Download{}, err
 	}
 
-	log.Printf("GetDownload Request=", req.URL)
+	log.Printf("GetDownload Request=%v", req.URL)
 	body, err := executeDownloadRequest(client, req)
 	if err != nil {
 		log.Println("Error can't execute download request", err)
@@ -259,6 +259,14 @@ func AddDownload(uri string) ([]byte, error) {
 }
 
 func GetDownloadsFiles(hash string) (TorrentFiles, error) {
+	// get download name first so we can include it in the file prefix if there's more than one file
+	// as qbittorrent shows the list with torrent name prepended in case there are more than 1 file
+	download, err := GetDownload(hash)
+	if err != nil {
+		log.Printf("tribler.GetDownloadFiles Can't get download with hash=%s", hash)
+		return TorrentFiles{}, err
+	}
+
 	client, err := newHTTPClient()
 	if err != nil {
 		return TorrentFiles{}, err
@@ -277,6 +285,12 @@ func GetDownloadsFiles(hash string) (TorrentFiles, error) {
 	var tf TorrentFiles
 	if err := json.Unmarshal(body, &tf); err != nil {
 		return TorrentFiles{}, err
+	}
+
+	if len(tf.Files) > 1 {
+		for i := range tf.Files {
+			tf.Files[i].Name = download.Name + "/" + tf.Files[i].Name
+		}
 	}
 
 	return tf, nil

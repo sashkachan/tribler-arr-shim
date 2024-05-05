@@ -54,6 +54,7 @@ type TorrentFiles struct {
 
 type TorrentProperties struct {
 	SavePath               string  `json:"save_path"`
+	Name                   string  `json:"name"`
 	CreationDate           int     `json:"creation_date"`
 	PieceSize              int     `json:"piece_size"`
 	Comment                string  `json:"comment"`
@@ -354,14 +355,15 @@ func containsFileExtensionSuffix(s string) bool {
 }
 
 func ConvertTriblerDownloadtoTorrentProperties(download tribler.Download) TorrentProperties {
-	// manipulate destination so that single file downloads destination is handled
 	destination := download.Destination
-	if !containsFileExtensionSuffix(download.Name) {
-		log.Println("Does not contain extension = ", download.Name)
-		destination = download.Destination + "/" + download.Name
-	}
+	// if !containsFileExtensionSuffix(download.Name) {
+	// 	log.Println("Does not contain extension = ", download.Name)
+	// 	destination = download.Destination + "/" + download.Name
+	// }
+
 	return TorrentProperties{
 		SavePath:               destination,
+		Name:                   download.Name,
 		CreationDate:           0,
 		PieceSize:              0,
 		Comment:                "",
