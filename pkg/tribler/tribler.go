@@ -75,6 +75,11 @@ type DownloadsResponse struct {
 	Checkpoints Checkpoints `json:"checkpoints"`
 }
 
+type AddDownloadResponse struct {
+	Infohash string `json:"infohash"`
+	Started  bool   `json:"started"`
+}
+
 const (
 	apiKeyHeader           = "X-Api-Key"
 	triblerAPIEndpointEnv  = "TRIBLER_API_ENDPOINT"
@@ -228,10 +233,10 @@ func GetDownload(hash string) (Download, error) {
 	return dr.Downloads[0], nil
 }
 
-func AddDownload(uri string) ([]byte, error) {
+func AddDownload(uri string) (string, error) {
 	client, err := newHTTPClient()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	hops := os.Getenv("TRIBLER_ANON_HOPS")
 	if hops == "" {
@@ -251,11 +256,16 @@ func AddDownload(uri string) ([]byte, error) {
 	log.Println("AddDownload.body", body)
 	req, err := newDownloadRequest("PUT", "/downloads", "", body)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	response, err := executeDownloadRequest(client, req)
-	return response, err
+	// unmarsall response to get infohash
+	var adr AddDownloadResponse
+	if err := json.Unmarshal(response, &adr); err != nil {
+		return "", err
+	}
+	return adr.Infohash, err
 }
 
 func GetDownloadsFiles(hash string) (TorrentFiles, error) {

@@ -7,7 +7,7 @@ require github.com/joho/godotenv v1.5.1 // direct
 require (
 	github.com/gin-contrib/sessions v0.0.4
 	github.com/gin-gonic/gin v1.9.1
-	github.com/mattn/go-sqlite3 v1.14.18
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/spf13/cobra v1.8.0
 )
 

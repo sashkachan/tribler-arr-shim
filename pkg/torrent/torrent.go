@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"tribler-arr-shim/pkg/storage"
 	"tribler-arr-shim/pkg/tribler"
 
 	"github.com/gin-contrib/sessions"
@@ -113,13 +114,21 @@ var DummyAppPreferences = AppPreferences{
 	CreateSubfolderEnabled: false,
 }
 
-func LoginHandler() gin.HandlerFunc {
+type Handler struct {
+	DB storage.Database
+}
+
+func NewHandler(db storage.Database) *Handler {
+	return &Handler{DB: db}
+}
+
+func (h *Handler) LoginHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Generate a random string of 32 characters
 		sid := "01234678910111213141617"
 
 		// Store the session ID in the database
-		err := storeSessionID(sid)
+		err := h.storeSessionID(sid)
 		if err != nil {
 			return
 		}
@@ -134,36 +143,61 @@ func LoginHandler() gin.HandlerFunc {
 }
 
 // GetApiVersion retrieves api version
-func GetWebApiVersion() gin.HandlerFunc {
+func (h *Handler) GetWebApiVersion() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.String(http.StatusOK, "2.2.8")
 	}
 }
 
 // GetVersion retrieves api version
-func GetVersion() gin.HandlerFunc {
+func (h *Handler) GetVersion() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.String(http.StatusOK, "4.1.3")
 	}
 }
 
 // GetInfo retrieves information about a torrent
-func GetInfo() gin.HandlerFunc {
+func (h *Handler) GetInfo() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get category from query
-		// category := c.Query("category")
-		// get Downloads from tribler
+		// filter torrents by category
+		filtered_torrents := []Torrent{}
+		// get category
+		category := c.Query("category")
+		// get category_torrents by category
+		category_torrents, err := h.DB.GetTorrentsByCategory(category)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"err": err})
+			return
+		}
 		downloads, _ := tribler.GetDownloads()
-		// convert downloads to the following struct
-		torrents := ConvertTriblerDownloadstoTorrent(downloads.Downloads)
+		converted_downloads:= h.ConvertTriblerDownloadstoTorrent(downloads.Downloads)
 
-		// TODO: implement getting torrent info from DB
-		c.JSON(http.StatusOK, torrents)
+		// if torrents is empty, return empty json
+		if len(category_torrents) == 0 {
+			c.JSON(http.StatusOK, filtered_torrents)
+			return
+		}
+
+		// convert torrents to a map so we can get by hash
+		torrents_map := make(map[string]Torrent)
+		for _, torrent := range converted_downloads {
+			torrents_map[torrent.Hash] = torrent
+		}
+			
+
+		for _, category_torrent := range category_torrents {
+			if torrent, ok := torrents_map[category_torrent.Hash]; ok {
+				torrent.Category = category_torrent.Category
+				filtered_torrents = append(filtered_torrents, torrent)
+			}
+		}
+
+		c.JSON(http.StatusOK, filtered_torrents)
 	}
 }
 
 // GetAppPreferences retrieves app preferences
-func GetAppPreferences() gin.HandlerFunc {
+func (h *Handler) GetAppPreferences() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		DummyAppPreferences.SavePath = os.Getenv("TRIBLER_DOWNLOAD_DIR")
 		c.JSON(http.StatusOK, DummyAppPreferences)
@@ -171,7 +205,7 @@ func GetAppPreferences() gin.HandlerFunc {
 }
 
 // GetProperties retrieves properties of a torrent
-func GetProperties() gin.HandlerFunc {
+func (h *Handler) GetProperties() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hash
 		hash := c.Query("hash")
@@ -187,7 +221,7 @@ func GetProperties() gin.HandlerFunc {
 }
 
 // GetTorrentsContents retrieves contents of a torrent
-func GetTorrentsContents() gin.HandlerFunc {
+func (h *Handler) GetTorrentsContents() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		hash := c.Query("hash")
 		torrentFiles, _ := tribler.GetDownloadsFiles(hash)
@@ -204,27 +238,34 @@ func GetTorrentsContents() gin.HandlerFunc {
 }
 
 // Add adds a new torrent
-func Add() gin.HandlerFunc {
+func (h *Handler) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get urls parameter, it's separated by new lines
 		urls := c.PostForm("urls")
+		category := c.PostForm("category")
 		log.Println("torrent.Add urls: ", urls)
 		// split urls by new line
 		urls_lines := strings.Split(urls, "\n")
 		// only use the first url
-		response, err := tribler.AddDownload(urls_lines[0])
+		infohash, err := tribler.AddDownload(urls_lines[0])
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error adding torrent"})
 			log.Printf("Error: %+v", err)
 			return
 		}
-		log.Printf("Response: %s", string(response))
+		log.Printf("Response: %s", string(infohash))
+
+		h.DB.AddTorrent(storage.Torrent{
+			Hash:     infohash,
+			Category: category,
+		})
+
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent added"})
 	}
 }
 
 // Delete deletes a torrent
-func Delete() gin.HandlerFunc {
+func (h *Handler) Delete() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hashes
 		hashes := c.PostForm("hashes")
@@ -236,11 +277,14 @@ func Delete() gin.HandlerFunc {
 		}
 
 		tribler.DeleteDownload(hashes, deleteFiles)
+		for _, hash := range strings.Split(hashes, ",") {
+			h.DB.DeleteTorrent(hash)
+		}
 	}
 }
 
 // SetCategory sets the category of a torrent
-func SetCategory() gin.HandlerFunc {
+func (h *Handler) SetCategory() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting the category of a torrent in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent category set"})
@@ -248,20 +292,46 @@ func SetCategory() gin.HandlerFunc {
 }
 
 // GetCategories retrieves all torrent categories
-func GetCategories() gin.HandlerFunc {
+func (h *Handler) GetCategories() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: implement getting all torrent categories from DB
-		c.JSON(http.StatusOK, gin.H{
-			os.Getenv("DEFAULT_CATEGORY"): gin.H{
-				"name":     os.Getenv("DEFAULT_CATEGORY"),
-				"savePath": os.Getenv("TRIBLER_DOWNLOAD_DIR"),
-			},
-		})
+		categories, err := h.DB.GetCategories()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"err": err})
+			return
+		}
+
+		// if categories is empty, return empty json
+		if len(categories) == 0 {
+			c.JSON(http.StatusOK, gin.H{})
+			return
+		}
+
+		//
+		// Return json in format
+		// {
+		//   {
+		//     "CategoryName": {
+		//       "savePath": "path",
+		//       "name": "CategoryName"
+		//     }
+		//   }
+		// }
+
+		categoryMap := make(map[string]map[string]string)
+		for _, category := range categories {
+			categoryMap[category.Name] = map[string]string{
+				"savePath": category.SavePath,
+				"name":     category.Name,
+			}
+		}
+		c.JSON(http.StatusOK, categoryMap)
+
 	}
+
 }
 
 // SetShareLimits sets the share limits of a torrent
-func SetShareLimits() gin.HandlerFunc {
+func (h *Handler) SetShareLimits() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting the share limits of a torrent in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent share limits set"})
@@ -269,7 +339,7 @@ func SetShareLimits() gin.HandlerFunc {
 }
 
 // SetTopPriority sets the priority of a torrent to top
-func SetTopPriority() gin.HandlerFunc {
+func (h *Handler) SetTopPriority() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting the priority of a torrent to top in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent priority set to top"})
@@ -277,7 +347,7 @@ func SetTopPriority() gin.HandlerFunc {
 }
 
 // PauseTorrent pauses a torrent
-func PauseTorrent() gin.HandlerFunc {
+func (h *Handler) PauseTorrent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hashes
 		hashes := c.PostForm("hashes")
@@ -287,7 +357,7 @@ func PauseTorrent() gin.HandlerFunc {
 }
 
 // ResumeTorrent resumes a torrent
-func ResumeTorrent() gin.HandlerFunc {
+func (h *Handler) ResumeTorrent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// get hashes
 		hashes := c.PostForm("hashes")
@@ -297,19 +367,51 @@ func ResumeTorrent() gin.HandlerFunc {
 }
 
 // SetForceStartTorrent sets a torrent to force start
-func SetForceStartTorrent() gin.HandlerFunc {
+func (h *Handler) SetForceStartTorrent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// TODO: implement setting a torrent to force start in DB
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent set to force start"})
 	}
 }
 
-func storeSessionID(sid string) error {
+// CreateCategory creates a new category
+func (h *Handler) CreateCategory() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// get category
+		category := c.PostForm("category")
+		// savePath is the same as the default download directory
+		savePath := os.Getenv("TRIBLER_DOWNLOAD_DIR")
+		// check if category already exists
+		categories, err := h.DB.GetCategories()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"err": err})
+			return
+		}
+		if c != nil {
+			for _, v := range categories {
+				if v.Name == category {
+					// dump v to log
+					log.Println("Category already exists: ", v)
+					c.JSON(http.StatusOK, gin.H{"message": "Category already exists"})
+					return
+				}
+			}
+		}
+		err = h.DB.AddCategory(category, savePath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"err": err})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Category created"})
+	}
+}
+
+func (h *Handler) storeSessionID(sid string) error {
 	// TODO: implement storing the session ID in the database
 	return nil
 }
 
-func ConvertTriblerDownloadstoTorrent(downloads []tribler.Download) []Torrent {
+func (h *Handler) ConvertTriblerDownloadstoTorrent(downloads []tribler.Download) []Torrent {
 	// Convert tribler download to torrent
 	torrent := []Torrent{}
 	for _, download := range downloads {
@@ -349,7 +451,7 @@ func ConvertTriblerDownloadstoTorrent(downloads []tribler.Download) []Torrent {
 	return torrent
 }
 
-func containsFileExtensionSuffix(s string) bool {
+func (h *Handler) containsFileExtensionSuffix(s string) bool {
 	re := regexp.MustCompile(`\.[a-z0-9]{3}$`)
 	return re.MatchString(s)
 }
