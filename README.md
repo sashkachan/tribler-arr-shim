@@ -51,8 +51,7 @@ Tribler does not implement a concept of categories but it can add tags to downlo
 This means that regardless of the configured category in an *arr app, all downloads will be returned on list requests. 
 
 # TODO
-1. Support multiple categories. 
-
+1. DONE Support multiple categories. 
 
 ## License
 
