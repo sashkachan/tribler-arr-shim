@@ -170,7 +170,7 @@ func (h *Handler) GetInfo() gin.HandlerFunc {
 			return
 		}
 		downloads, _ := tribler.GetDownloads()
-		converted_downloads:= h.ConvertTriblerDownloadstoTorrent(downloads.Downloads)
+		converted_downloads := h.ConvertTriblerDownloadstoTorrent(downloads.Downloads)
 
 		// if torrents is empty, return empty json
 		if len(category_torrents) == 0 {
@@ -183,7 +183,6 @@ func (h *Handler) GetInfo() gin.HandlerFunc {
 		for _, torrent := range converted_downloads {
 			torrents_map[torrent.Hash] = torrent
 		}
-			
 
 		for _, category_torrent := range category_torrents {
 			if torrent, ok := torrents_map[category_torrent.Hash]; ok {
@@ -237,31 +236,56 @@ func (h *Handler) GetTorrentsContents() gin.HandlerFunc {
 	}
 }
 
+func categoryExists(category string, categories []storage.Category) bool {
+	for _, v := range categories {
+		if v.Name == category {
+			return true
+		}
+	}
+	return false
+}
+
 // Add adds a new torrent
 func (h *Handler) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// get urls parameter, it's separated by new lines
 		urls := c.PostForm("urls")
 		category := c.PostForm("category")
 		log.Println("torrent.Add urls: ", urls)
-		// split urls by new line
-		urls_lines := strings.Split(urls, "\n")
-		// only use the first url
-		infohash, err := tribler.AddDownload(urls_lines[0])
+		log.Println("torrent.Add category: ", category)
+
+		urlsLines := strings.Split(urls, "\n")
+		firstURL := urlsLines[0]
+
+		infohash, err := tribler.AddDownload(firstURL)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Error adding torrent"})
-			log.Printf("Error: %+v", err)
+			handleInternalError(c, "Error adding torrent", err)
 			return
 		}
 		log.Printf("Response: %s", string(infohash))
 
-		h.DB.AddTorrent(storage.Torrent{
+		categories, err := h.DB.GetCategories()
+		if err != nil {
+			handleInternalError(c, "Failed to get categories", err)
+			return
+		}
+
+		if !categoryExists(category, categories) {
+			err = h.DB.AddCategory(category, os.Getenv("TRIBLER_DOWNLOAD_DIR"))
+			if err != nil {
+				handleInternalError(c, "Failed to add category "+category, err)
+				return
+			}
+		}
+
+		torrent := storage.Torrent{
 			Hash:     infohash,
 			Category: category,
-		})
+		}
+		h.DB.AddTorrent(torrent)
 
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent added"})
 	}
+
 }
 
 // Delete deletes a torrent
@@ -302,6 +326,7 @@ func (h *Handler) GetCategories() gin.HandlerFunc {
 
 		// if categories is empty, return empty json
 		if len(categories) == 0 {
+
 			c.JSON(http.StatusOK, gin.H{})
 			return
 		}
@@ -516,4 +541,9 @@ func ConvertTriblerFilesToTorrentFiles(files []tribler.Files) []TorrentFiles {
 		})
 	}
 	return torrentFiles
+}
+
+func handleInternalError(c *gin.Context, msg string, err error) {
+	c.JSON(http.StatusInternalServerError, gin.H{"message": msg})
+	log.Printf("Error: %+v", err)
 }
