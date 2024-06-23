@@ -228,7 +228,7 @@ func GetDownload(hash string) (Download, error) {
 		return Download{}, errors.New("download not found")
 	}
 
-	log.Printf("Download returns %+v", dr.Downloads[0])
+	log.Printf("Download returns %+v", dr.Downloads[0].Infohash)
 
 	return dr.Downloads[0], nil
 }

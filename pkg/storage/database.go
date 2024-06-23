@@ -12,6 +12,7 @@ import (
 type Database interface {
 	GetCategories() ([]Category, error)
 	GetTorrentsByCategory(category string) ([]Torrent, error)
+	GetAllTorrents() ([]Torrent, error)
 	AddTorrent(torrent Torrent) error
 	DeleteTorrent(hash string) error
 	AddCategory(category, savePath string) error
@@ -125,7 +126,37 @@ func (db *SQLite) AddTorrent(torrent Torrent) error {
 	return tx.Commit()
 }
 
+// GetAllTorrents returns all torrents in the database
+func (db *SQLite) GetAllTorrents() ([]Torrent, error) {
+	rows, err := db.Query("SELECT hash, category_id FROM torrent")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var torrents []Torrent
+	for rows.Next() {
+		var torrent Torrent
+		err = rows.Scan(&torrent.Hash, &torrent.Category)
+		if err != nil {
+			return nil, err
+		}
+		torrents = append(torrents, torrent)
+	}
+
+	return torrents, nil
+}
+
 func (db *SQLite) AddCategory(category, savePath string) error {
+	// check if category exists
+	var existing_category Category
+	db.QueryRow("SELECT id FROM category WHERE name = ?", category).Scan(&existing_category.ID)
+
+	if existing_category.ID != 0 {
+		log.Printf("Category %s already exists, won't add", category)
+		return nil
+	}
+
 	// log the category
 	log.Println("Adding category:", category)
 	_, err := db.Exec("INSERT INTO category (name, savePath) VALUES (?, ?)", category, savePath)

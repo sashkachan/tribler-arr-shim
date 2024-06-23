@@ -6,7 +6,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-
 	"tribler-arr-shim/pkg/storage"
 	"tribler-arr-shim/pkg/tribler"
 
@@ -285,7 +284,6 @@ func (h *Handler) Add() gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{"message": "Torrent added"})
 	}
-
 }
 
 // Delete deletes a torrent
@@ -350,9 +348,7 @@ func (h *Handler) GetCategories() gin.HandlerFunc {
 			}
 		}
 		c.JSON(http.StatusOK, categoryMap)
-
 	}
-
 }
 
 // SetShareLimits sets the share limits of a torrent
@@ -430,8 +426,8 @@ func (h *Handler) CreateCategory() gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"message": "Category created"})
 	}
 }
-
 func (h *Handler) storeSessionID(sid string) error {
+
 	// TODO: implement storing the session ID in the database
 	return nil
 }
@@ -546,4 +542,48 @@ func ConvertTriblerFilesToTorrentFiles(files []tribler.Files) []TorrentFiles {
 func handleInternalError(c *gin.Context, msg string, err error) {
 	c.JSON(http.StatusInternalServerError, gin.H{"message": msg})
 	log.Printf("Error: %+v", err)
+}
+
+func ImportNonCategorisedTorrents(db storage.Database, category string) error {
+	// get all torrents from the database
+	// then get all torrents from tribler
+	// compare the two lists and import any torrents that are not in the database
+
+	// get all torrents from the database
+	all_torrents, err := db.GetAllTorrents()
+	if err != nil {
+		log.Printf("db.GetAllTorrents returned error")
+		log.Printf("Error: %+v", err)
+	}
+
+	// get all downloads_response from tribler
+	downloads_response, err := tribler.GetDownloads()
+	if err != nil {
+		log.Println("tribler.GetDownloads() returned error")
+		log.Printf("Error: %+v", err)
+	}
+
+	log.Printf("Download response len: %d", len(downloads_response.Downloads))
+
+	hashes := map[string]bool{}
+	for _, storage_torrent := range all_torrents {
+		hashes[storage_torrent.Hash] = true
+	}
+
+	for _, download := range downloads_response.Downloads {
+		log.Println("Processing", download.Infohash, download.Name)
+		if _, exists := hashes[download.Infohash]; !exists {
+			log.Printf("Importing torrent %s", download.Infohash)
+			new_torrent := storage.Torrent{
+				Hash:     download.Infohash,
+				Category: category,
+			}
+			err := db.AddTorrent(new_torrent)
+			if err != nil {
+				log.Printf("Error adding torrent: %+v", err)
+			}
+		}
+	}
+
+	return err
 }

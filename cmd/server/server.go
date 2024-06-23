@@ -6,8 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-
+	"path/filepath"
 	"tribler-arr-shim/pkg/storage"
+
 	torrent "tribler-arr-shim/pkg/torrent"
 
 	"github.com/gin-contrib/sessions"
@@ -16,13 +17,12 @@ import (
 	"github.com/joho/godotenv"
 
 	_ "github.com/mattn/go-sqlite3"
-
-	"path/filepath"
-
 )
 
+// StartServer starts the server
 func StartServer() {
 	err := godotenv.Load()
+
 	if err != nil {
 		log.Printf("Error loading .env file: %v\n", err)
 	}
@@ -33,6 +33,7 @@ func StartServer() {
 		db_path = "/data/database.db"
 	}
 	initsql_path, err := filepath.Abs("./scripts/init_db.sql")
+
 	if err != nil {
 		log.Fatal("Error getting absolute path for init.sql: ", err)
 	}
@@ -46,11 +47,25 @@ func StartServer() {
 	port := os.Getenv("TRIBLER_ARR_SHIM_PORT")
 	serverAddr := fmt.Sprintf("%s:%s", addr, port)
 
-	log.Printf("Starting server on %s", serverAddr)
-	err = http.ListenAndServe(serverAddr, r)
 	if err != nil {
 		log.Fatal("Error starting server:", err)
 	}
+
+	if os.Getenv("IMPORT_NON_CATEGORISED") == "true" {
+		default_category := os.Getenv("DEFAULT_CATEGORY")
+		download_dir := os.Getenv("TRIBLER_DOWNLOAD_DIR")
+		log.Println("Import: Default category: ", default_category)
+		log.Println("Import: Download dir: ", download_dir)
+		err = db.AddCategory(default_category, download_dir)
+		if err != nil {
+			log.Println("Error when importing: ", err)
+		}
+		log.Println("Importing non-categorised torrents")
+		_ = torrent.ImportNonCategorisedTorrents(db, default_category)
+	}
+
+	log.Printf("Starting server on %s", serverAddr)
+	err = http.ListenAndServe(serverAddr, r)
 }
 
 func loggingMiddleware(c *gin.Context) {
@@ -59,7 +74,7 @@ func loggingMiddleware(c *gin.Context) {
 }
 
 func apiv2Routes(db storage.Database) *gin.Engine {
-	var handler = torrent.NewHandler(db)
+	handler := torrent.NewHandler(db)
 	r := gin.Default()
 	gob.Register(map[string]interface{}{})
 	r.Use(sessions.Sessions("tribler-arr-shim", cookiestore.NewStore([]byte(os.Getenv("SESSION_SECRET")))))
@@ -74,6 +89,7 @@ func apiv2Routes(db storage.Database) *gin.Engine {
 	r.GET("/api/v2/torrents/info", handler.GetInfo())
 	r.GET("/api/v2/torrents/properties", handler.GetProperties())
 	r.GET("/api/v2/torrents/files", handler.GetTorrentsContents())
+
 	r.POST("/api/v2/torrents/add", handler.Add())
 	r.POST("/api/v2/torrents/delete", handler.Delete())
 	r.POST("/api/v2/torrents/setCategory", handler.SetCategory())
