@@ -63,11 +63,11 @@ type TorrentFiles struct {
 }
 
 type Files struct {
-	Index    int     `json:"index"`
 	Name     string  `json:"name"`
+	Index    int     `json:"index"`
 	Size     int     `json:"size"`
-	Included bool    `json:"included"`
 	Progress float64 `json:"progress"`
+	Included bool    `json:"included"`
 }
 
 type DownloadsResponse struct {

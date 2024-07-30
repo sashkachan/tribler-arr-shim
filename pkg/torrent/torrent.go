@@ -16,49 +16,48 @@ import (
 // Structs
 // Torrent struct
 type Torrent struct {
-	Dlspeed       int     `json:"dlspeed"`
-	Eta           float64 `json:"eta"`
-	FLPiecePrio   bool    `json:"f_l_piece_prio"`
-	ForceStart    bool    `json:"force_start"`
+	Tags          string  `json:"tags"`
+	State         string  `json:"state"`
+	ContentPath   string  `json:"content_path"`
+	Name          string  `json:"name"`
 	Hash          string  `json:"hash"`
 	Category      string  `json:"category"`
-	Tags          string  `json:"tags"`
-	Name          string  `json:"name"`
+	NumLeechs     int     `json:"num_leechs"`
+	Progress      float64 `json:"progress"`
 	NumComplete   int     `json:"num_complete"`
 	NumIncomplete int     `json:"num_incomplete"`
-	NumLeechs     int     `json:"num_leechs"`
+	Dlspeed       int     `json:"dlspeed"`
 	NumSeeds      int     `json:"num_seeds"`
 	Priority      int     `json:"priority"`
-	Progress      float64 `json:"progress"`
+	Upspeed       int     `json:"upspeed"`
 	Ratio         int     `json:"ratio"`
-	SeqDL         bool    `json:"seq_dl"`
-	ContentPath   string  `json:"content_path"`
+	Eta           float64 `json:"eta"`
 	Size          int     `json:"size"`
-	// state can be: "downloading", "uploading", "pausedUP"
-	State        string `json:"state"`
-	SuperSeeding bool   `json:"super_seeding"`
-	Upspeed      int    `json:"upspeed"`
+	FLPiecePrio   bool    `json:"f_l_piece_prio"`
+	SeqDL         bool    `json:"seq_dl"`
+	SuperSeeding  bool    `json:"super_seeding"`
+	ForceStart    bool    `json:"force_start"`
 }
 
 // TorrentFiles
 type TorrentFiles struct {
-	Index        int     `json:"index"`
 	Name         string  `json:"name"`
+	PieceRange   []int   `json:"piece_range"`
+	Index        int     `json:"index"`
 	Size         int     `json:"size"`
 	Progress     float64 `json:"progress"`
 	Priority     int     `json:"priority"`
-	IsSeed       bool    `json:"is_seed"`
-	PieceRange   []int   `json:"piece_range"`
 	Availability float64 `json:"availability"`
+	IsSeed       bool    `json:"is_seed"`
 }
 
 type TorrentProperties struct {
-	SavePath               string  `json:"save_path"`
-	Name                   string  `json:"name"`
-	CreationDate           int     `json:"creation_date"`
-	PieceSize              int     `json:"piece_size"`
 	Comment                string  `json:"comment"`
-	TotalWasted            int     `json:"total_wasted"`
+	Name                   string  `json:"name"`
+	CreatedBy              string  `json:"created_by"`
+	SavePath               string  `json:"save_path"`
+	ShareRatio             float64 `json:"share_ratio"`
+	CreationDate           int     `json:"creation_date"`
 	TotalUploaded          int     `json:"total_uploaded"`
 	TotalUploadedSession   int     `json:"total_uploaded_session"`
 	TotalDownloaded        int     `json:"total_downloaded"`
@@ -69,10 +68,10 @@ type TorrentProperties struct {
 	SeedingTime            int     `json:"seeding_time"`
 	NbConnections          int     `json:"nb_connections"`
 	NbConnectionsLimit     int     `json:"nb_connections_limit"`
-	ShareRatio             float64 `json:"share_ratio"`
+	PieceSize              int     `json:"piece_size"`
 	AdditionDate           int     `json:"addition_date"`
 	CompletionDate         int     `json:"completion_date"`
-	CreatedBy              string  `json:"created_by"`
+	TotalWasted            int     `json:"total_wasted"`
 	DlSpeedAvg             int     `json:"dl_speed_avg"`
 	DlSpeed                int     `json:"dl_speed"`
 	Eta                    int     `json:"eta"`
@@ -426,8 +425,8 @@ func (h *Handler) CreateCategory() gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"message": "Category created"})
 	}
 }
-func (h *Handler) storeSessionID(sid string) error {
 
+func (h *Handler) storeSessionID(_ string) error {
 	// TODO: implement storing the session ID in the database
 	return nil
 }

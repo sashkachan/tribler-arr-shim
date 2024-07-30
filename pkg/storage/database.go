@@ -79,7 +79,6 @@ func (db *SQLite) GetTorrentsByCategory(category string) ([]Torrent, error) {
     FROM torrent as t, category as c
     WHERE t.category_id = c.id
     AND c.name = ?`, category)
-
 	if err != nil {
 		log.Println("Error getting torrents by category:", err)
 		return nil, err
